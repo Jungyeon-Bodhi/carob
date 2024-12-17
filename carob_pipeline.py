@@ -3,7 +3,7 @@
 """
 Created on Tue Sep 17 15:52:03 2024
 
-@author: ijeong-yeon
+@author: Bodhi Global Analysis
 """
 
 import bodhi_indicator as bd
