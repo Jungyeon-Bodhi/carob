@@ -9,6 +9,8 @@ Created on Tue Sep 17 15:52:03 2024
 import bodhi_indicator as bd
 import bodhi_PMF as pmf
 import pandas as pd
+import re
+import statsmodels.api as sm
 
 # Please assign the file path of the cleaned dataset
 df = pd.read_excel('data/24-UNFPA-SS-1 - Data_cleaned.xlsx')
@@ -406,6 +408,47 @@ important_programmes.add_breakdown({'s2':'Region', 's1':'Age Group', 's3':'Gende
 important_programmes.add_var_order(["Women's rights", "Women empowerment", "Stigma reduction", "Understanding of GBV", "Equality", "Prevention and response of GBV", "Other"])
 important_programmes.add_kap_label(["Women's rights", "Women empowerment", "Stigma reduction", "Understanding of GBV", "Equality", "Prevention and response of GBV", "Other"])
 
+# Function to run the OLS test on Attitudes toward GBV
+def ols(df):
+    X = df[['s2', 'group_b_sex_violence', 'group_b_husband_violence', 'group_s_sex_violence', 'group_s_husband_violence', '32']]
+    Y = df['score_gbv_g']
+    X = pd.get_dummies(data=X, drop_first=False)
+    X = X.applymap(lambda x: 1 if x == True else (0 if x == False else x))
+    delete = ['group_b_sex_violence_Invalid','group_b_husband_violence_Invalid','group_s_sex_violence_Invalid','group_s_husband_violence_Invalid']
+    X.drop(columns=delete, inplace=True)
+    X_sm = sm.add_constant(X)
+    model = sm.OLS(Y, X_sm).fit()
+    print(model.summary())
+    summary_text = model.summary().as_text()
+    lines = summary_text.split("\n")
+    header = "\n".join(lines[:2]) 
+    model_stats = lines[2:lines.index("")]
+    coeff_start = lines.index("==============================================================================")
+    coeff_end = lines.index("==============================================================================", coeff_start + 1)
+    coefficients = lines[coeff_start + 1 : coeff_end]
+    diagnostics = lines[coeff_end + 1 :]
+    model_stats_data = []
+    for line in model_stats:
+        if ": " in line:
+            metric, value = line.split(": ", 1)
+            model_stats_data.append((metric.strip(), value.strip()))
+    model_stats_df = pd.DataFrame(model_stats_data, columns=["Metric", "Value"])
+    coeff_data = []
+    for line in coefficients:
+        values = re.split(r"\s{2,}", line.strip())
+        if len(values) > 1:
+            coeff_data.append(values)
+    
+    coeff_df = pd.DataFrame(
+        coeff_data,
+        columns=["Variable", "Coef", "Std Err", "t", "P>|t|", "[0.025", "0.975]"]
+    )
+    diagnostics_df = pd.DataFrame({"Diagnostics": diagnostics})
+    with pd.ExcelWriter("data/OLS_attitudes_GBV.xlsx", engine="openpyxl") as writer:
+        model_stats_df.to_excel(writer, sheet_name="Model Stats", index=False)
+        coeff_df.to_excel(writer, sheet_name="Coefficients", index=False)
+        diagnostics_df.to_excel(writer, sheet_name="Diagnostics", index=False)  
+
 
 # Create PMF model for the project
 carob = pmf.PerformanceManagementFramework('UNFPA KAP Survey on GBV', 'KAP')
@@ -423,4 +466,7 @@ file_path2 = 'data/24-UNFPA-SS-1 KAP Chi2 Results.xlsx' # The file path of the c
 folder = 'visuals/'  # The file path for data visualisation
 
 # Run the entire data analysis pipeline
-carob.PMF_generation(file_path1, file_path2, folder) 
+carob.PMF_generation(file_path1, file_path2, folder)
+
+# Run the OLS test
+ols(df)
